@@ -1,4 +1,5 @@
-import ../src/model
+import ../src/models
+import ../src/database
 import norm/[sqlite]
 import unittest
 import std / with
@@ -37,7 +38,7 @@ suite "Database/Models":
       dbConn.addTag(post, tag)
       let tags = dbConn.getTags(post)
       check tags[0].name == testTagName
-      
+
     test "Adding a single to a post multiple times should error":
       dbConn.addTag(post, tag)
       expect(DuplicateError):
@@ -46,28 +47,29 @@ suite "Database/Models":
     with dbConn:
       delete tag
       delete category
-  
+
   suite "Votes":
     var
       user = newUser()
-      post = newPost()
+      category = dbConn.create(newCategory("test category"))
+      post = dbConn.create(newPost("x", "the title", category.id))
 
     teardown:
       try:
         dbConn.removeVote user, post
       except NotFoundError:
         discard
-    
+
     test "Score that is -1 (Downvote) should be valid":
       dbConn.addVote user, post, Downvote
-    
+
     test "Score that is 1 (Upvote) should be valid":
       dbConn.addVote user, post, Downvote
-    
+
     test "Score that is invalid should throw error":
       expect(ValueError):
         dbConn.addVote user, post, 0
-        
+
     test "Should throw error is vote with identical copy is made":
       dbConn.addVote user, post, Upvote
       expect(DuplicateError):
@@ -76,7 +78,7 @@ suite "Database/Models":
     test "Removing vote that doesn't exist should throw error":
       expect(NotFoundError):
         dbConn.removeVote user, post
-      
+
     test "Adding positive votes should increase score":
       var
         user1 = User(id: 1)
@@ -92,7 +94,7 @@ suite "Database/Models":
         removeVote user2, post
         removeVote user3, post
       check voteCount == 3
-            
+
     test "Adding negative votes should decrease score":
       var
         user1 = User(id: 1)
@@ -108,3 +110,16 @@ suite "Database/Models":
         removeVote user2, post
         removeVote user3, post
       check voteCount == -3
+
+    test "Cached score should equal votes (adding votes)":
+      dbConn.addVote user, post, Upvote
+      check post.score == dbConn.countScore(post)
+
+    test "Cached score should equal votes (removing votes)":
+      dbConn.addVote user, post, Upvote
+      dbConn.removeVote user, post
+      check post.score == dbConn.countScore(post)
+
+    with dbConn:
+      delete category
+      delete post
