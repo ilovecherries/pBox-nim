@@ -17,8 +17,8 @@ type
     ## Whether the user is privileged on the site in order to moderate
     ## or to configure the website.
     when not defined(js):
-      auth*: AuthMethod
-      ## The authentification method and details that the user has
+      authID*: int64
+      ## The authentification method ID for details that the user has
       ## in order to sign in.
 
   Category* = ref object of Model
@@ -49,9 +49,6 @@ type
     ## The content of the post
     title* {.unique.}: string
     ## The title of the post
-    when not defined(js):
-      categoryID*: int64
-      ## The ID of the category that the post is assigned to
     score*: int64
     ## A cached calculation of the score that is generated using countScore, can
     ## also be increased without calculating the score if using the addVote and
@@ -61,6 +58,9 @@ type
       ## The tags that are attached to the post
       category*: Category
       ## The category that the post is assigned to
+    else:
+      categoryID*: int64
+      ## The ID of the category that the post is assigned to
 
   Vote* = ref object of Model
     ## Representation of a vote that affects a Post
@@ -71,25 +71,26 @@ type
     score*: int
     ## The score leniance of of the vote, an Upvote (1) increases the score
     ## while a Downvote (-1) decreases the score.
-  when not defined(js):
-    AuthSession* = ref object of Model
-      userID*: int64
-      ## The user ID that the auth session is assigned to
-      token*: string
-      ## The auth token that is used to check against when performing
-      ## authorized actions
-      expireTime*: Option[DateTime]
-      ## The time when the token will expire
+    ##
+
+when not defined(js):
+  type AuthSession* = ref object of Model
+    ## An authentication session for a user
+    userID*: int64
+    ## The user that the session is for
+    token*: string
+    ## The token that is used to access the data for the user
+
 
 when not defined(js):
   func newUser*(
     name = "",
-    auth = AuthMethod(),
+    authID: int64 = 0,
     super = false
   ): User =
     User(
       name: name,
-      auth: auth,
+      authID: authID,
       super: super
     )
 else:
@@ -160,3 +161,13 @@ func newVote*(
     postID: postID,
     score: score
   )
+
+when not defined(js):
+  func newAuthSession*(
+    userID: int64 = 0,
+    token = ""
+  ): AuthSession =
+    AuthSession(
+      userID: userID,
+      token: token
+    )

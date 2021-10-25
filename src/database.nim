@@ -166,6 +166,8 @@ proc createDatabase*(filename = ":memory"): DbConn =
   result.createTables(newTag())
   result.createTables(newPost())
   result.createTables(newVote())
+  result.createTables(newPassAuth())
+  result.createTables(newAuthSession())
 
 
 proc registerNewUser*(dbConn: DbConn, username: string, password: string;
@@ -173,12 +175,15 @@ proc registerNewUser*(dbConn: DbConn, username: string, password: string;
   {.raises: [NotFoundError, ValueError, DbError, Exception].} =
   ## Registers a new user in the database using the PassAuth method
   # Create a user object and add them to the database
-  block:
-    let passAuth = newPassAuth(password)
-    var user = newUser(username, passAuth, super)
-    dbConn.insert(user)
-  # Get the user from the database so we can retrieve the ID and
-  # return it
-  block:
-    result = newUser()
-    dbConn.select(result, "User.name = ?", username)
+  let passAuth = dbConn.create(generatePassAuth(password))
+  result = dbConn.create(newUser(username, passAuth.id, super))
+
+proc createUserAuthKey*(dbConn: DbConn, user: User): AuthSession =
+  let token = makeSessionKey()
+  return dbConn.create(newAuthSession(user.id, token))
+
+proc getUserByAuthKey(dbConn: DbConn, token: string): User =
+  var session = newAuthSession()
+  dbConn.select session, "AuthSession.token = ?", token
+  result = newUser()
+  dbConn.select result, "User.id = ?", session.userID

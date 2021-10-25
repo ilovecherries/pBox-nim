@@ -5,13 +5,16 @@ from bcrypt import hash, genSalt
 from random import rand
 
 type
-  ## The authentification token that will be compared against when using
-  ## any authentification method.
-  AuthToken* = string
   AuthMethod* = ref object of Model
+  ## A method for authentication that is used to generate an AuthSession
+  ## from a user
   PassAuth* = ref object of AuthMethod
-    hashedPassword: string
-    salt: string
+    ## An authentication method that uses a password to authenticate the
+    ## user
+    hashedPassword*: string
+    ## The password hashed with Bcrypt and a salt
+    salt*: string
+    ## The salt that was used to hash the password with
 
 proc randomSalt(): string
 proc devRandomSalt(): string
@@ -28,14 +31,20 @@ proc `==`*(auth: PassAuth, password: string): bool =
 proc `==`*(password: string, auth: PassAuth): bool =
   result = auth == password
 
-proc newPassAuth*(password: string): PassAuth =
-  let
-    salt = makeSalt()
-    hashedPassword = hashPassword(password, salt)
+func newPassAuth*(
+  hashedPassword = "",
+  salt = ""
+): PassAuth =
   PassAuth(
     hashedPassword: hashedPassword,
     salt: salt
   )
+
+proc generatePassAuth*(password: string): PassAuth =
+  let
+    salt = makeSalt()
+    hashedPassword = hashPassword(password, salt)
+  newPassAuth(hashedPassword, salt)
 
 proc randomSalt(): string =
   result = ""
@@ -61,10 +70,10 @@ proc makeSalt(): string =
   ## Creates a salt using a cryptographically secure random number generator.
   ##
   ## Ensures that the resulting salt contains no ``\0``.
-  try:
-    result = devRandomSalt()
-  except IOError:
-    result = randomSalt()
+  # try:
+  #   result = devRandomSalt()
+  # except IOError:
+  result = randomSalt()
 
   var newResult = ""
   for i in 0 ..< result.len:
