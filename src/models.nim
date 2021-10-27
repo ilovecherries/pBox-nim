@@ -36,13 +36,6 @@ type
     tagID*: int64
     ## The ID of the tag that is attached to the post
 
-  Tag* = ref object of Model
-    ## Tags which can be attached to a post
-    name* {.unique.}: string
-    ## The name of the tag
-    color*: string
-    ## Hex-code formatted for display on the website
-
   Post* = ref object of Model
     ## A Post on the website
     content*: string
@@ -58,6 +51,7 @@ type
       ## The tags that are attached to the post
       category*: Category
       ## The category that the post is assigned to
+      myScore*: Option[int]
     else:
       categoryID*: int64
       ## The ID of the category that the post is assigned to
@@ -102,15 +96,6 @@ else:
       name: name,
       super: super
     )
-
-func newCategory*(
-  name = "",
-  parentID = none(int64)
-): Category =
-  Category(
-    name: name,
-    parentID: parentID
-  )
 
 func newTag*(
   name = "",

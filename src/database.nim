@@ -74,36 +74,41 @@ proc createPost*(dbConn: DbConn, content: string, title: string,
   ## then returns the created post with the associated ID
   # the category should exist in the database, this will throw an error
   # and exit the function if it cannot find the category
-  var category = newCategory()
-  dbConn.select category, "Category.id = ?", categoryID
-  # we should check if a post with the same title already exists
   try:
-    var post = newPost()
-    dbConn.select post, "Post.title = ?", title
-    raise DuplicateError.newException(
-      "A post with the title, \"" & title & "\", already exists."
-    )
+    var category = newCategory()
+    dbConn.select category, "Category.id = ?", categoryID
+    # we should check if a post with the same title already exists
+    try:
+      var post = newPost()
+      dbConn.select post, "Post.title = ?", title
+      raise DuplicateError.newException(
+        "A post with the title, \"" & title & "\", already exists."
+      )
+    except NotFoundError:
+      discard
+    # now, check if all of the tags listed exist
+    # TODO: DbConn.transaction may help optimize this?
+    var tags = newSeq[Tag]()
+    block:
+      for i in tagIDs:
+        var tag = newTag()
+        try:
+          dbConn.select tag, "Tag.id = ?", i
+          tags.add(tag)
+        except NotFoundError:
+          raise ValueError.newException(
+            "A tag with the ID " & $i & " does not exist."
+          )
+    # create the post and add it to the database
+    result = dbConn.create(newPost(content, title, categoryID))
+    # now attach all of the tags to the post
+    for tag in tags:
+      dbConn.addTag(result, tag)
   except NotFoundError:
-    discard
-  # now, check if all of the tags listed exist
-  # TODO: DbConn.transaction may help optimize this?
-  var tags = newSeq[Tag]()
-  block:
-    for i in tagIDs:
-      var tag = newTag()
-      try:
-        dbConn.select tag, "Tag.id = ?", i
-        tags.add(tag)
-      except NotFoundError:
-        raise ValueError.newException(
-          "A tag with the ID " & $i & " does not exist."
-        )
-  # create the post and add it to the database
-  var post = dbConn.create(newPost(content, title, categoryID))
-  # now attach all of the tags to the post
-  for tag in tags:
-    dbConn.addTag(post, tag)
-  return post
+    raise ValueError.newException(
+      "A category with the ID " & $categoryID & " does not exist."
+    )
+
 
 proc delete*(dbConn: DbConn, post: var Post) =
   ## A modified version of DbConn.delete for removing all
@@ -134,7 +139,7 @@ proc addVote*(dbConn: DbConn, user: User, post: var Post, score: int)
       raise DuplicateError.newException("An identical vote already exists.")
     vote.score = score
     dbConn.update vote
-    post.score += score
+    post.score += score * 2
     dbConn.update post
   except NotFoundError:
     discard dbConn.create(newVote(user.id, post.id, score))
@@ -182,7 +187,7 @@ proc createUserAuthKey*(dbConn: DbConn, user: User): AuthSession =
   let token = makeSessionKey()
   return dbConn.create(newAuthSession(user.id, token))
 
-proc getUserByAuthKey(dbConn: DbConn, token: string): User =
+proc getUserByAuthKey*(dbConn: DbConn, token: string): User =
   var session = newAuthSession()
   dbConn.select session, "AuthSession.token = ?", token
   result = newUser()

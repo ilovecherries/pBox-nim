@@ -2,8 +2,11 @@ import norm/[sqlite]
 import models
 import database
 import jester
-import std/[json, marshal]
+import std/json
 import auth
+import macros
+import options
+from strutils import strip, parseInt
 
 from sugar import collect
 
@@ -36,6 +39,18 @@ type
   UserOutput = object of Output
     name: string
     super: bool
+
+type AuthError = ValueError
+
+proc authenticate(request: Request): User =
+  if not request.headers.hasKey("Authorization"):
+    raise AuthError.newException("The authorization field does not exist.")
+  let token = request.headers["Authorization"].strip()
+
+  try:
+    result = dbConn.getUserByAuthKey(token)
+  except NotFoundError:
+    raise AuthError.newException("This does not exist and is invalid.")
 
 proc postToPostOutput(post: Post): PostOutput =
   var category = newCategory()
@@ -72,11 +87,6 @@ routes:
       credentialsJSON["password"].to(string)
     )
 
-    var auth = newPassAuth()
-    dbConn.select auth, "PassAuth.id = ?", user.authID
-    # var myUser = newUser()
-    # dbConn.select myUser, "User.name = ?", credentialsJSON["username"].to(string)
-
     let output = UserOutput(
       id: user.id,
       name: user.name,
@@ -98,28 +108,117 @@ routes:
     let password = credentialsJSON["password"].to(string)
 
     # get the user by username
-    var user = newUser()
-    dbConn.select user, "User.name = ?", credentialsJSON["username"].to(string)
-    # check if the password is correct
-    var passAuth = newPassAuth()
-    dbConn.select passAuth, "PassAuth.id = ?", user.authID
-    if password == passAuth:
-      let session = dbConn.create(newAuthSession(user.id, makeSessionKey()))
-      resp session.token
-    else:
-      resp "NAY"
+    try:
+      var user = newUser()
+      dbConn.select user, "User.name = ?", credentialsJSON["username"].to(string)
+      # check if the password is correct
+      var passAuth = newPassAuth()
+      dbConn.select passAuth, "PassAuth.id = ?", user.authID
+      if password == passAuth:
+        let session = dbConn.create(newAuthSession(user.id, makeSessionKey()))
+        resp session.token
+      else:
+        resp Http400, "The password is incorrect."
+    except NotFoundError:
+      resp Http400, "User not found."
 
   get "/posts/":
-    type PostOutput = object
-      id: int64
-      content: string
-      title: string
-      score: int64
-      tags: seq[Tag]
-      category: Category
     var posts = @[newPost()]
     dbConn.selectAll posts
     let postOutputs = collect(newSeq):
       for i in posts:
         postToPostOutput(i)
     resp %*postOutputs
+
+  post "/posts/":
+    try:
+      discard request.authenticate()
+
+      var postJSON = parseJson(request.body)
+      cond "title" in postJSON
+      cond "content" in postJSON
+      cond "category" in postJSON
+      cond "tags" in postJSON
+
+      try:
+        let post = dbConn.createPost(
+          postJSON["content"].to(string),
+          postJSON["title"].to(string),
+          postJSON["category"].to(int64),
+          postJSON["tags"].to(seq[int64])
+        )
+
+        let output = postToPostOutput(post)
+
+        resp %*output
+      except ValueError:
+        resp Http400, getCurrentExceptionMsg()
+      except DuplicateError:
+        resp Http400, getCurrentExceptionMsg()
+    except AuthError:
+      resp Http401, "You are not authorized to do that."
+
+  post "/posts/@post/vote":
+    # check if the user is authorized
+    cond @"post" != ""
+    let postID = @"post".parseInt()
+
+    try:
+      var post = newPost()
+      dbConn.select post, "Post.id = ?", postID
+
+      cond request.headers.hasKey("Authorization")
+      let token = request.headers["Authorization"].strip()
+
+      try:
+        var authSession = newAuthSession()
+        dbConn.select authSession, "AuthSession.token = ?", token
+
+        var data = parseJson(request.body)
+        cond "score" in data
+        let score = data["score"].to(int)
+
+        var user = newUser()
+        dbConn.select user, "User.id = ?", authSession.userID
+
+        try:
+          dbConn.addVote user, post, score
+          resp %*postToPostOutput(post)
+        except DuplicateError:
+          resp Http400, getCurrentExceptionMsg()
+        except ValueError:
+          resp Http400, getCurrentExceptionMsg()
+
+      except NotFoundError:
+        resp Http401, "You are not authorized to do that."
+    except NotFoundError:
+      resp Http400, "A post with ID " & $postID & " does not exist"
+
+  delete "/posts/@post/vote":
+    try:
+      let user = request.authenticate()
+      let postID = @"post".parseInt()
+
+      try:
+        cond @"post" != ""
+
+        var post = newPost()
+        dbConn.select post, "Post.id = ?", postID
+        try:
+          dbConn.removeVote user, post
+          resp %*postToPostOutput(post)
+        except DuplicateError:
+          resp Http400, getCurrentExceptionMsg()
+        except ValueError:
+          resp Http400, getCurrentExceptionMsg()
+
+      except NotFoundError:
+        resp Http400, "A post with ID " & $postID & " does not exist"
+    except NotFoundError:
+      resp Http401, "You are not authorized to do that."
+
+
+  get "/sessions/":
+    var sessions = @[newAuthSession()]
+    dbConn.selectAll sessions
+    resp %*sessions

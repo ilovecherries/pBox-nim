@@ -86,4 +86,3 @@ proc makeSessionKey*(): string =
   ## Creates a random key to be used to authorize a session.
   let random = makeSalt()
   return bcrypt.hash(random, genSalt(8))
-
