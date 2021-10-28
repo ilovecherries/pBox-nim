@@ -55,17 +55,6 @@ proc getTags*(dbConn: DbConn, post: Post): seq[Tag]
       dbConn.select tag, "Tag.id = ?", i.tagID
       tag
 
-proc delete*(dbConn: DbConn, tag: var Tag) =
-  ## A modified version of DbConn.delete for removing all
-  ## tag-post relationships associated with the tag.
-  # delete all of the TagPostRelationships associated with the tag
-  var relationships = @[newTagPostRelationship()]
-  dbConn.select relationships, "TagPostRelationship.tagID = ?", tag.id
-  for i in relationships:
-    var model = i
-    dbConn.delete model
-  sqlite.delete(dbConn, tag)
-
 
 proc createPost*(dbConn: DbConn, content: string, title: string,
                  categoryID: int64, tagIDs: seq[int64]): Post
@@ -110,18 +99,6 @@ proc createPost*(dbConn: DbConn, content: string, title: string,
     )
 
 
-proc delete*(dbConn: DbConn, post: var Post) =
-  ## A modified version of DbConn.delete for removing all
-  ## tag-post relationships associated with the post.
-  # delete all of the TagPostRelationships associated with the post
-  var relationships = @[newTagPostRelationship()]
-  dbConn.select relationships, "TagPostRelationship.postID = ?", post.id
-  for i in relationships:
-    var model = i
-    dbConn.delete model
-  sqlite.delete(dbConn, post)
-
-
 proc addVote*(dbConn: DbConn, user: User, post: var Post, score: int)
   {.raises: [NotFoundError, ValueError, DbError, DuplicateError].} =
   ## Adds a vote to a post that's attached to a user.
@@ -162,17 +139,6 @@ proc countScore*(dbConn: DbConn, post: Post): int =
   var votes = @[newVote()]
   dbConn.select votes, "Vote.postID = ?", post.id
   result = foldl(votes, a + b.score, 0)
-
-proc createDatabase*(filename = ":memory"): DbConn =
-  result = open(filename, "", "", "")
-  result.createTables(newUser())
-  result.createTables(newCategory())
-  result.createTables(newTagPostRelationship())
-  result.createTables(newTag())
-  result.createTables(newPost())
-  result.createTables(newVote())
-  result.createTables(newPassAuth())
-  result.createTables(newAuthSession())
 
 
 proc registerNewUser*(dbConn: DbConn, username: string, password: string;

@@ -20,7 +20,7 @@ proc randomSalt(): string
 proc devRandomSalt(): string
 proc makeSalt(): string
 
-proc hashPassword(password: string, salt: string, comparingTo = ""): string =
+proc hashPassword*(password: string, salt: string, comparingTo = ""): string =
   let bcryptSalt = if comparingTo != "": comparingTo else: genSalt(8)
   hash(getMD5(salt & getMD5(password)), bcryptSalt)
 

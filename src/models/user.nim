@@ -1,6 +1,6 @@
 import json
-from ../auth import AuthMethod
 import norm/[model, pragmas]
+import ../auth
 
 type
   User* = object
@@ -9,6 +9,9 @@ type
     op*: bool
 
 when not defined(js):
+  import ../dbhelper
+  import norm/sqlite
+
   type
     UserModel* = ref object of Model
       name* {.unique.}: string
@@ -25,6 +28,14 @@ when not defined(js):
       auth: auth,
       op: op
     )
+
+  proc registerNewUser*(dbConn: DbConn, username: string, password: string;
+                      op = false): UserModel
+    {.raises: [NotFoundError, ValueError, DbError, Exception].} =
+    ## Registers a new user in the database using the PassAuth method
+    # Create a user object and add them to the database
+    let passAuth = dbConn.create(generatePassAuth(password))
+    result = dbConn.create(newUser(username, passAuth, op))
 
   proc toSerialized*(user: UserModel): string =
     let serialized = User(

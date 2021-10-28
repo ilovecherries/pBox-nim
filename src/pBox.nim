@@ -1,14 +1,34 @@
-import norm/[sqlite]
-import models
-import database
+import norm/[model, sqlite]
 import jester
 import std/json
 import auth
 import macros
 import options
+import models/[post, category, user, vote, authsession]
 from strutils import strip, parseInt
 
-from sugar import collect
+from sugar import collect, dup
+
+proc create*[T: Model](dbConn: DbConn, model: T): T
+  {.raises: [DbError, ValueError].} =
+  ## Inserts the model with the properties and returns it with the newly
+  ## inserted ID
+  var m = model
+  dbConn.insert m
+  let id = dbConn.count(T)
+  m.id = id
+  result = m
+
+proc createDatabase*(filename = ":memory"): DbConn =
+  result = open(filename, "", "", "")
+  result.createTables(newUser())
+  result.createTables(newCategory())
+  result.createTables(newTagPostRelationship())
+  result.createTables(newTag())
+  result.createTables(newPost())
+  result.createTables(newVote())
+  result.createTables(newPassAuth())
+  result.createTables(newAuthSession())
 
 let dbConn = createDatabase()
 
@@ -17,15 +37,13 @@ try:
     category = dbConn.create(newCategory("owo"))
     myTag = dbConn.create(newTag("my tag"))
     myOtherTag = dbConn.create(newTag("my other tag"))
-  discard dbConn.createPost("hello", "owo", category.id, @[myTag.id])
-  discard dbConn.createPost("my post", "uwu", category.id, @[])
-  discard dbConn.createPost("my lost", ">w<", category.id,
-    @[myTag.id, myOtherTag.id])
-  discard dbConn.createPost("my sauce", "ewe", category.id, @[myOtherTag.id])
+  discard dbConn.createPost("hello", "owo", category, @[myTag])
+  discard dbConn.createPost("my post", "uwu", category, @[])
+  discard dbConn.createPost("my lost", ">w<", category,
+    @[myTag, myOtherTag])
+  discard dbConn.createPost("my sauce", "ewe", category, @[myOtherTag])
 except DbError:
   discard
-except DuplicateError:
-  echo getCurrentExceptionMsg()
 
 type
   Output = object of RootObj
@@ -42,34 +60,17 @@ type
 
 type AuthError = ValueError
 
-proc authenticate(request: Request): User =
+proc authenticate(request: Request): UserModel =
   if not request.headers.hasKey("Authorization"):
     raise AuthError.newException("The authorization field does not exist.")
   let token = request.headers["Authorization"].strip()
 
   try:
-    result = dbConn.getUserByAuthKey(token)
+    var auth = newAuthSession()
+    dbConn.select auth, "AuthSession.token = ?", token
+    result = auth.user
   except NotFoundError:
     raise AuthError.newException("This does not exist and is invalid.")
-
-proc postToPostOutput(post: Post): PostOutput =
-  var category = newCategory()
-  dbConn.select category, "Category.id = ?", post.categoryID
-  var relationships = @[newTagPostRelationship()]
-  dbConn.select relationships, "TagPostRelationship.postID = ?", post.id
-  var tags = collect(newSeq):
-    for j in relationships:
-      var tag = newTag()
-      dbConn.select tag, "Tag.id = ?", j.tagID
-      tag
-  PostOutput(
-    id: post.id,
-    content: post.content,
-    title: post.title,
-    score: post.score,
-    tags: tags,
-    category: category
-  )
 
 routes:
   post "/register/":
@@ -87,13 +88,7 @@ routes:
       credentialsJSON["password"].to(string)
     )
 
-    let output = UserOutput(
-      id: user.id,
-      name: user.name,
-      super: user.super
-    )
-
-    resp %*output
+    resp %*(user.toSerialized())
 
   post "/login/":
     ## Registers a new user in the database and returns the newly
@@ -110,12 +105,11 @@ routes:
     # get the user by username
     try:
       var user = newUser()
-      dbConn.select user, "User.name = ?", credentialsJSON["username"].to(string)
+      dbConn.select user, "UserModel.name = ?", credentialsJSON["username"].to(string)
       # check if the password is correct
-      var passAuth = newPassAuth()
-      dbConn.select passAuth, "PassAuth.id = ?", user.authID
-      if password == passAuth:
-        let session = dbConn.create(newAuthSession(user.id, makeSessionKey()))
+      var passAuth = cast[PassAuth](user.auth)
+      if password == passAuth.hashedPassword:
+        let session = dbConn.create(generateAuthSession(user))
         resp session.token
       else:
         resp Http400, "The password is incorrect."
@@ -127,7 +121,7 @@ routes:
     dbConn.selectAll posts
     let postOutputs = collect(newSeq):
       for i in posts:
-        postToPostOutput(i)
+        i.toSerialized(dbConn)
     resp %*postOutputs
 
   post "/posts/":
@@ -141,19 +135,28 @@ routes:
       cond "tags" in postJSON
 
       try:
+        let categoryID = postJSON["category"].to(int64)
+        var category = newCategory()
+        dbConn.select category, "CategoryModel.id = ?", categoryID
+        var tagIDs = postJSON["tags"].to(seq[int64])
+        var tags = collect(newSeq):
+          for i in tagIDs:
+            var tag = newTag()
+            dbConn.select tag, "TagModel.id = ?", i
+            tag
         let post = dbConn.createPost(
-          postJSON["content"].to(string),
           postJSON["title"].to(string),
-          postJSON["category"].to(int64),
-          postJSON["tags"].to(seq[int64])
+          postJSON["content"].to(string),
+          category,
+          tags
         )
 
-        let output = postToPostOutput(post)
+        let output = post.toSerialized(dbConn)
 
         resp %*output
       except ValueError:
         resp Http400, getCurrentExceptionMsg()
-      except DuplicateError:
+      except DbError:
         resp Http400, getCurrentExceptionMsg()
     except AuthError:
       resp Http401, "You are not authorized to do that."
@@ -165,7 +168,7 @@ routes:
 
     try:
       var post = newPost()
-      dbConn.select post, "Post.id = ?", postID
+      dbConn.select post, "PostModel.id = ?", postID
 
       cond request.headers.hasKey("Authorization")
       let token = request.headers["Authorization"].strip()
@@ -179,13 +182,11 @@ routes:
         let score = data["score"].to(int)
 
         var user = newUser()
-        dbConn.select user, "User.id = ?", authSession.userID
+        dbConn.select user, "UserModel.id = ?", authSession.user.id
 
         try:
-          dbConn.addVote user, post, score
-          resp %*postToPostOutput(post)
-        except DuplicateError:
-          resp Http400, getCurrentExceptionMsg()
+          discard post.addVote(dbConn, user, score)
+          resp %*(post.toSerialized(dbConn))
         except ValueError:
           resp Http400, getCurrentExceptionMsg()
 
@@ -205,9 +206,9 @@ routes:
         var post = newPost()
         dbConn.select post, "Post.id = ?", postID
         try:
-          dbConn.removeVote user, post
-          resp %*postToPostOutput(post)
-        except DuplicateError:
+          discard post.removeVote(dbConn, user)
+          resp %*(post.toSerialized(dbConn))
+        except DbError:
           resp Http400, getCurrentExceptionMsg()
         except ValueError:
           resp Http400, getCurrentExceptionMsg()
