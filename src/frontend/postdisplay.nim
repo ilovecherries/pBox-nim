@@ -2,7 +2,7 @@ include karax / prelude
 import karax/kajax
 import json
 
-from ../models import Post
+from ../models/post import Post
 const
   UpvoteIndex = 0
   DownvoteIndex = 1

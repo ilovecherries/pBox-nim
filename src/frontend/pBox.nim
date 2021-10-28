@@ -2,9 +2,9 @@ include karax / prelude
 import karax/kajax
 import json
 
-from ../models import Post, newPost
+from ../models/post import Post
 
-from post import PostDisplay, buildPostDisplay
+from postdisplay import PostDisplay, buildPostDisplay
 
 var postDisplays = newSeq[PostDisplay]()
 
@@ -25,6 +25,7 @@ setRenderer createDom
 
 proc postResponseHandler(httpStatus: int, response: kstring) =
   let parsed = parseJson($response)
+  echo parsed
   let posts = parsed.to(seq[Post])
   for i in posts:
     var component: PostDisplay

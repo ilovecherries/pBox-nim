@@ -37,10 +37,9 @@ when not defined(js):
     let passAuth = dbConn.create(generatePassAuth(password))
     result = dbConn.create(newUser(username, passAuth, op))
 
-  proc toSerialized*(user: UserModel): string =
-    let serialized = User(
+  proc toSerialized*(user: UserModel): User =
+    User(
       id: user.id,
       name: user.name,
       op: user.op,
     )
-    result = $(%*serialized)

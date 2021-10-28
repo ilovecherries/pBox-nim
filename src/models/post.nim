@@ -3,7 +3,6 @@ import json
 from sugar import collect, dup
 import norm/[model, pragmas]
 import category
-from ../dbhelper import create
 
 type
   Tag* = ref object of Model
@@ -14,12 +13,13 @@ type
     ## Hex-code formatted for display on the website
 
   Post* = object
-    id: int64
-    title: string
-    score: int64
-    category: Category
-    tags: seq[Tag]
-    myScore: Option[int]
+    id*: int64
+    title*: string
+    content*: string
+    score*: int64
+    category*: Category
+    tags*: seq[Tag]
+    myScore*: Option[int]
 
 func newTag*(
   name = "",
@@ -32,6 +32,7 @@ func newTag*(
 
 when not defined(js):
   import norm/sqlite
+  from ../dbhelper import create
 
   type
     PostModel* = ref object of Model
@@ -113,9 +114,9 @@ when not defined(js):
         tag
 
   proc toSerialized*(post: PostModel, dbConn: DbConn;
-      authorizedUser = ""): string =
+      authorizedUser = ""): Post =
     ## Returns a serialized version of the post
-    let serialized = Post(
+    Post(
       id: post.id,
       title: post.title,
       score: post.score,
@@ -123,7 +124,6 @@ when not defined(js):
       tags: post.tags(dbConn),
       myScore: none int,
     )
-    result = $(%*serialized)
 
   proc createPost*(dbConn: DbConn, title: string, content: string,
                    category: Category, tags: seq[Tag]): PostModel =

@@ -43,6 +43,7 @@ try:
     @[myTag, myOtherTag])
   discard dbConn.createPost("my sauce", "ewe", category, @[myOtherTag])
 except DbError:
+  echo getCurrentExceptionMsg()
   discard
 
 type
@@ -126,7 +127,7 @@ routes:
 
   post "/posts/":
     try:
-      discard request.authenticate()
+      # discard request.authenticate()
 
       var postJSON = parseJson(request.body)
       cond "title" in postJSON
