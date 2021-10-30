@@ -5,19 +5,10 @@ import auth
 import macros
 import options
 import models/[post, category, user, vote, authsession]
+import dbhelper
 from strutils import strip, parseInt
 
 from sugar import collect, dup
-
-proc create*[T: Model](dbConn: DbConn, model: T): T
-  {.raises: [DbError, ValueError].} =
-  ## Inserts the model with the properties and returns it with the newly
-  ## inserted ID
-  var m = model
-  dbConn.insert m
-  let id = dbConn.count(T)
-  m.id = id
-  result = m
 
 proc createDatabase*(filename = ":memory"): DbConn =
   result = open(filename, "", "", "")

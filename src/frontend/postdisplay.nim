@@ -1,13 +1,12 @@
 include karax / prelude
 import karax/kajax
 import json
+from state import token
 
 from ../models/post import Post
 const
   UpvoteIndex = 0
   DownvoteIndex = 1
-
-let token = cstring"$2a$08$l7OGt165gr.tZORGBGbqOOfIoXDIcN1T5dSg9CtShnxrP8RfPzpiS"
 
 type
   VoteState = enum
