@@ -6,6 +6,7 @@ const
   Upvote* = 1
   Downvote* = -1
 
+
 type
   Vote* = ref object of Model
     user*: UserModel

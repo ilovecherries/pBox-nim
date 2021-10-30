@@ -1,5 +1,5 @@
 import norm/[model, sqlite]
-import jester
+import jester, asyncdispatch
 import std/json
 import auth
 import macros
@@ -9,6 +9,8 @@ import dbhelper
 from strutils import strip, parseInt
 
 from sugar import collect, dup
+
+const port = 3001
 
 proc createDatabase*(filename = ":memory"): DbConn =
   result = open(filename, "", "", "")
@@ -37,19 +39,6 @@ except DbError:
   echo getCurrentExceptionMsg()
   discard
 
-type
-  Output = object of RootObj
-    id: int64
-  PostOutput = object of Output
-    content: string
-    title: string
-    score: int64
-    tags: seq[Tag]
-    category: Category
-  UserOutput = object of Output
-    name: string
-    super: bool
-
 type AuthError = ValueError
 
 proc authenticate(request: Request): UserModel =
@@ -64,7 +53,7 @@ proc authenticate(request: Request): UserModel =
   except NotFoundError:
     raise AuthError.newException("This does not exist and is invalid.")
 
-routes:
+router pBox:
   post "/register/":
     ## Registers a new user in the database and returns the newly
     ## created User object. For now, it assumes that you are using only the
@@ -98,15 +87,23 @@ routes:
     try:
       var user = newUser()
       dbConn.select user, "UserModel.name = ?", credentialsJSON["username"].to(string)
+      var passAuth = newPassAuth()
+      dbConn.select passAuth, "PassAuth.id = ?", user.authMethodId
       # check if the password is correct
-      var passAuth = cast[PassAuth](user.auth)
-      if password == passAuth.hashedPassword:
+      if password == passAuth:
         let session = dbConn.create(generateAuthSession(user))
         resp session.token
       else:
         resp Http400, "The password is incorrect."
     except NotFoundError:
       resp Http400, "User not found."
+
+  get "/users/me":
+    try:
+      let user = request.authenticate()
+      resp %*(user.toSerialized())
+    except NotFoundError:
+      resp Http401, "You must be authorized to get your user information."
 
   get "/posts/":
     var posts = @[newPost()]
@@ -162,19 +159,12 @@ routes:
       var post = newPost()
       dbConn.select post, "PostModel.id = ?", postID
 
-      cond request.headers.hasKey("Authorization")
-      let token = request.headers["Authorization"].strip()
-
       try:
-        var authSession = newAuthSession()
-        dbConn.select authSession, "AuthSession.token = ?", token
+        let user = request.authenticate()
 
         var data = parseJson(request.body)
         cond "score" in data
         let score = data["score"].to(int)
-
-        var user = newUser()
-        dbConn.select user, "UserModel.id = ?", authSession.user.id
 
         try:
           discard post.addVote(dbConn, user, score)
@@ -196,7 +186,7 @@ routes:
         cond @"post" != ""
 
         var post = newPost()
-        dbConn.select post, "Post.id = ?", postID
+        dbConn.select post, "PostModel.id = ?", postID
         try:
           discard post.removeVote(dbConn, user)
           resp %*(post.toSerialized(dbConn))
@@ -215,3 +205,10 @@ routes:
     var sessions = @[newAuthSession()]
     dbConn.selectAll sessions
     resp %*sessions
+proc main() =
+  let settings = newSettings(port = Port(port))
+  var jester = initJester(pBox, settings = settings)
+  jester.serve()
+
+when isMainModule:
+  main()

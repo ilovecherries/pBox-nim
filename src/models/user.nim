@@ -5,7 +5,7 @@ import ../auth
 type
   User* = object
     id*: int64
-    name*: string
+    username*: string
     op*: bool
 
 when not defined(js):
@@ -16,16 +16,16 @@ when not defined(js):
     UserModel* = ref object of Model
       name* {.unique.}: string
       op*: bool
-      auth*: AuthMethod
+      authMethodID*: int64
 
   func newUser*(
     name = "",
-    auth = AuthMethod(),
+    authMethodID: int64 = 0,
     op = false
   ): UserModel =
     UserModel(
       name: name,
-      auth: auth,
+      authMethodID: authMethodID,
       op: op
     )
 
@@ -35,11 +35,11 @@ when not defined(js):
     ## Registers a new user in the database using the PassAuth method
     # Create a user object and add them to the database
     let passAuth = dbConn.create(generatePassAuth(password))
-    result = dbConn.create(newUser(username, passAuth, op))
+    result = dbConn.create(newUser(username, passAuth.id, op))
 
   proc toSerialized*(user: UserModel): User =
     User(
       id: user.id,
-      name: user.name,
+      username: user.name,
       op: user.op,
     )

@@ -1,1 +1,3 @@
-var token* = ""
+include karax / prelude
+
+var token*: kstring = ""
