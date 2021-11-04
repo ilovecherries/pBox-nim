@@ -120,7 +120,6 @@ router pBox:
       resp Http401, "You must be authorized to get your user information."
 
   get "/posts":
-    # TODO: im going to filter out things by using sets later
     let params = request.params
     var filters = newSeq[string]()
     if "tags" in params:
