@@ -54,6 +54,8 @@ proc addVote*(post: var PostModel, dbConn: DbConn, user: UserModel,
   except NotFoundError:
     var vote = newVote(user, post, score)
     dbConn.insert vote
+    post.score += score
+    dbConn.update post
     vote
 
 proc removeVote*(post: var PostModel, dbConn: DbConn, user: UserModel): Vote =

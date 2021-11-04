@@ -1,12 +1,19 @@
 import norm/[model, sqlite]
 import jester, asyncdispatch
-import std/json
+import std/[json, tables]
 import auth
 import macros
 import options
 import models/[post, category, user, vote, authsession]
 import dbhelper
-from strutils import strip, parseInt
+from strutils import strip, parseInt, join, split, parseFloat
+import strformat
+
+import
+  logging
+
+var consoleLog = newConsoleLogger()
+addHandler(consoleLog)
 
 from sugar import collect, dup
 
@@ -24,6 +31,13 @@ proc createDatabase*(filename = ":memory"): DbConn =
   result.createTables(newAuthSession())
 
 let dbConn = createDatabase()
+
+proc isNumeric(s: string): bool =
+  try:
+    discard s.parseFloat()
+    result = true
+  except ValueError:
+    result = false
 
 try:
   let
@@ -105,17 +119,42 @@ router pBox:
     except NotFoundError:
       resp Http401, "You must be authorized to get your user information."
 
-  get "/posts/":
-    var posts = @[newPost()]
-    dbConn.selectAll posts
-    let postOutputs = collect(newSeq):
-      for i in posts:
-        i.toSerialized(dbConn)
-    resp %*postOutputs
+  get "/posts":
+    # TODO: im going to filter out things by using sets later
+    let params = request.params
+    if "tags" in params:
+      let tags = params["tags"].split(",")
+      for i in tags:
+        if not i.isNumeric:
+          resp Http400, "Tags must be numbers."
 
-  post "/posts/":
+      let tagSQL = fmt"""
+        SELECT postID
+        FROM TagPostRelationship
+        WHERE tagID IN ({tags.join(",")})
+      """
+      let postIDs = collect(newSeq):
+        for i in dbConn.getAllRows(sql tagSQL):
+          i[0].to(int64)
+      var posts = @[newPost()]
+      let joinedPostIDs = postIDs.join(",")
+      dbConn.select posts, fmt"PostModel.id IN ({joinedPostIDs})"
+
+      let postOutputs = collect(newSeq):
+        for i in posts:
+          i.toSerialized(dbConn)
+      resp %*postOutputs
+    else:
+      var posts = @[newPost()]
+      dbConn.selectAll posts
+      let postOutputs = collect(newSeq):
+        for i in posts:
+          i.toSerialized(dbConn)
+      resp %*postOutputs
+
+  post "/posts":
     try:
-      # discard request.authenticate()
+      discard request.authenticate()
 
       var postJSON = parseJson(request.body)
       cond "title" in postJSON
@@ -200,11 +239,11 @@ router pBox:
     except NotFoundError:
       resp Http401, "You are not authorized to do that."
 
-
   get "/sessions/":
     var sessions = @[newAuthSession()]
     dbConn.selectAll sessions
     resp %*sessions
+
 proc main() =
   let settings = newSettings(port = Port(port))
   var jester = initJester(pBox, settings = settings)

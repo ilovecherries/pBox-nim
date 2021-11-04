@@ -1,5 +1,4 @@
 import options
-import json
 from sugar import collect, dup
 import norm/[model, pragmas]
 import category

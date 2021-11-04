@@ -41,4 +41,4 @@ proc postResponseHandler(httpStatus: int, response: kstring) =
     var component: PostDisplay
     postDisplays.add buildPostDisplay(i, nref = component)
 
-ajaxGet("/posts/", @[], postResponseHandler, doRedraw = true)
+ajaxGet("/posts", @[], postResponseHandler, doRedraw = true)
