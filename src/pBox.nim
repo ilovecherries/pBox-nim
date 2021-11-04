@@ -122,19 +122,34 @@ router pBox:
   get "/posts":
     # TODO: im going to filter out things by using sets later
     let params = request.params
+    var filters = newSeq[string]()
     if "tags" in params:
       let tags = params["tags"].split(",")
       for i in tags:
         if not i.isNumeric:
-          resp Http400, "Tags must be numbers."
+          resp Http400, "The tag IDs must be numbers."
 
-      let tagSQL = fmt"""
+      filters.add fmt"""
         SELECT postID
         FROM TagPostRelationship
         WHERE tagID IN ({tags.join(",")})
+        GROUP BY postID
+        HAVING COUNT(*) >= {tags.len}
       """
+    if "category" in params:
+      let category = params["category"]
+      if not category.isNumeric:
+        resp Http400, "The category ID must be a number."
+
+      filters.add fmt"""
+        SELECT id
+        FROM PostModel
+        WHERE category = {category}
+      """
+
+    if filters.len > 0:
       let postIDs = collect(newSeq):
-        for i in dbConn.getAllRows(sql tagSQL):
+        for i in dbConn.getAllRows(sql filters.join("\nINTERSECT\n")):
           i[0].to(int64)
       var posts = @[newPost()]
       let joinedPostIDs = postIDs.join(",")

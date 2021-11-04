@@ -12,11 +12,6 @@ from loginForm import LoginForm, buildLoginForm
 var postDisplays = newSeq[PostDisplay]()
 var lForm: LoginForm = nil
 
-type
-  UserCreadentials = object
-    username*: string
-    password*: string
-
 proc createDom(): VNode =
   result = buildHtml(tdiv):
     tdiv(class = "container"):

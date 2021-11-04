@@ -47,6 +47,8 @@ when not defined(js):
       category*: Category
       ## The category that the post is listed under
 
+    # TODO: I need to put UNIQUE constraints on tag and post and put fk handling
+    # on those
     TagPostRelationship* = ref object of Model
       ## A relationship between a tag and a post
       tagID*: int64
