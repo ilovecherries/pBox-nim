@@ -6,7 +6,7 @@ import macros
 import options
 import models/[post, category, user, vote, authsession]
 import dbhelper
-from strutils import strip, parseInt, join, split, parseFloat
+from strutils import strip, parseInt, join, split, parseFloat, replace
 import strformat
 
 import
@@ -29,6 +29,9 @@ proc createDatabase*(filename = ":memory"): DbConn =
   result.createTables(newVote())
   result.createTables(newPassAuth())
   result.createTables(newAuthSession())
+
+func escapeSQLString(s: string): string =
+  s.replace("'", "''")
 
 let dbConn = createDatabase()
 
@@ -135,6 +138,7 @@ router pBox:
         GROUP BY postID
         HAVING COUNT(*) >= {tags.len}
       """
+
     if "category" in params:
       let category = params["category"]
       if not category.isNumeric:
@@ -144,6 +148,16 @@ router pBox:
         SELECT id
         FROM PostModel
         WHERE category = {category}
+      """
+
+    if "q" in params:
+      let query = params["q"].escapeSQLString()
+      filters.add fmt"""
+        SELECT id
+        FROM PostModel
+        WHERE 
+          instr(title, '{query}') > 0
+          OR instr(content, '{query}') > 0
       """
 
     if filters.len > 0:
